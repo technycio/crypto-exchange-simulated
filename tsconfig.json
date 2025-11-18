@@ -1,0 +1,22 @@
+{
+	"compilerOptions": {
+		"lib": ["ES2024"],
+		"module": "ESNext",
+		"target": "ES2024",
+		"moduleResolution": "node",
+		"types": ["node"],
+		"outDir": "./dist",
+		"rootDir": "./src",
+
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"declaration": true,
+		"declarationMap": true,
+		"sourceMap": true
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist"]
+}

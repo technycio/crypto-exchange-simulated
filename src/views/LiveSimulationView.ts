@@ -1,0 +1,251 @@
+import { ChainController } from '../controllers/ChainController.js';
+import { LiveSimulationService, ISimulationEvent, SimulationSpeed } from '../services/LiveSimulationService.js';
+
+/**
+ * ANSI color codes for terminal
+ */
+const Colors = {
+	reset: '\x1b[0m',
+	bright: '\x1b[1m',
+	dim: '\x1b[2m',
+	
+	// Foreground colors
+	black: '\x1b[30m',
+	red: '\x1b[31m',
+	green: '\x1b[32m',
+	yellow: '\x1b[33m',
+	blue: '\x1b[34m',
+	magenta: '\x1b[35m',
+	cyan: '\x1b[36m',
+	white: '\x1b[37m',
+	
+	// Background colors
+	bgBlack: '\x1b[40m',
+	bgRed: '\x1b[41m',
+	bgGreen: '\x1b[42m',
+	bgYellow: '\x1b[43m',
+	bgBlue: '\x1b[44m',
+	bgMagenta: '\x1b[45m',
+	bgCyan: '\x1b[46m',
+	bgWhite: '\x1b[47m',
+};
+
+/**
+ * View for displaying live simulation with Matrix-style effects
+ */
+export class LiveSimulationView {
+	private readonly chainController: ChainController;
+	private readonly simulationService: LiveSimulationService;
+	private displayInterval?: NodeJS.Timeout;
+	private isDisplaying: boolean = false;
+
+	constructor(chainController: ChainController, simulationService: LiveSimulationService) {
+		this.chainController = chainController;
+		this.simulationService = simulationService;
+	}
+
+	/**
+	 * Start displaying live simulation
+	 */
+	public startDisplay(speed: SimulationSpeed): void {
+		if (this.isDisplaying) {
+			return;
+		}
+
+		this.isDisplaying = true;
+		
+		// Clear screen and hide cursor
+		console.clear();
+		process.stdout.write('\x1b[?25l'); // Hide cursor
+
+		// Initial render
+		this.render(speed);
+
+		// Update display every 500ms
+		this.displayInterval = setInterval(() => {
+			this.render(speed);
+		}, 500);
+	}
+
+	/**
+	 * Stop displaying live simulation
+	 */
+	public stopDisplay(): void {
+		if (this.displayInterval) {
+			clearInterval(this.displayInterval);
+		}
+
+		this.isDisplaying = false;
+		
+		// Show cursor again
+		process.stdout.write('\x1b[?25h');
+		console.clear();
+	}
+
+	/**
+	 * Render the simulation display
+	 */
+	private render(speed: SimulationSpeed): void {
+		// Move cursor to top-left
+		process.stdout.write('\x1b[H');
+
+		const width = Math.min(process.stdout.columns || 100, 100);
+		const output: string[] = [];
+
+		// Header
+		output.push(this.renderHeader(width, speed));
+		output.push('');
+
+		// Stats bar
+		output.push(this.renderStats(width));
+		output.push('');
+
+		// Activity stream
+		output.push(this.renderActivityStream(width));
+		output.push('');
+
+		// Simulation stats
+		output.push(this.renderSimulationStats(width));
+		output.push('');
+
+		// Footer
+		output.push(this.renderFooter());
+
+		// Clear screen and write output
+		console.clear();
+		console.log(output.join('\n'));
+	}
+
+	/**
+	 * Render header with ASCII art
+	 */
+	private renderHeader(width: number, speed: SimulationSpeed): string {
+		const lines: string[] = [];
+		
+		const title = '    LIVE BLOCKCHAIN SIMULATION    ';
+		const status = this.simulationService.isActive() ? '●RUNNING●' : '○STOPPED○';
+		const speedText = `[${speed}]`;
+		
+		lines.push(`${Colors.bright}${Colors.cyan}╔${'═'.repeat(width - 2)}╗${Colors.reset}`);
+		lines.push(`${Colors.bright}${Colors.cyan}║${Colors.green}${title.padStart((width + title.length) / 2).padEnd(width - 2)}${Colors.cyan}║${Colors.reset}`);
+		lines.push(`${Colors.bright}${Colors.cyan}║${Colors.yellow}  Status: ${status}  │  Speed: ${speedText}  │  Auto-Mine: ON  ${Colors.cyan}${''.padEnd(width - 60)}║${Colors.reset}`);
+		lines.push(`${Colors.bright}${Colors.cyan}╚${'═'.repeat(width - 2)}╝${Colors.reset}`);
+		
+		return lines.join('\n');
+	}
+
+	/**
+	 * Render blockchain stats
+	 */
+	private renderStats(width: number): string {
+		const chainLength = this.chainController.getChainLength();
+		const pendingTxs = this.chainController.getPendingTransactionCount();
+		const difficulty = this.chainController.getDifficulty();
+		const isValid = this.chainController.isChainValid();
+		
+		const lines: string[] = [];
+		
+		lines.push(`${Colors.cyan}╔${'═'.repeat(width - 2)}╗${Colors.reset}`);
+		lines.push(`${Colors.cyan}║${Colors.white}  Chain Height: ${Colors.bright}${Colors.green}${String(chainLength).padEnd(8)}${Colors.reset}${Colors.cyan}│${Colors.white}  Pending TXs: ${Colors.bright}${Colors.yellow}${String(pendingTxs).padEnd(8)}${Colors.reset}${Colors.cyan}│${Colors.white}  Difficulty: ${Colors.bright}${difficulty}${Colors.reset}${Colors.cyan}  │  Valid: ${isValid ? Colors.green + '✓' : Colors.red + '✗'}${Colors.reset}${Colors.cyan}  ${''.padEnd(width - 75)}║${Colors.reset}`);
+		lines.push(`${Colors.cyan}╚${'═'.repeat(width - 2)}╝${Colors.reset}`);
+		
+		return lines.join('\n');
+	}
+
+	/**
+	 * Render activity stream with scrolling events
+	 */
+	private renderActivityStream(width: number): string {
+		const lines: string[] = [];
+		
+		lines.push(`${Colors.magenta}╔═══ 📊 LIVE ACTIVITY STREAM ═══════════════════════════════════════════════╗${Colors.reset}`);
+		lines.push(`${Colors.dim}${'━'.repeat(width)}${Colors.reset}`);
+		
+		const events = this.simulationService.getEvents(15);
+		
+		if (events.length === 0) {
+			lines.push(`${Colors.dim}  Waiting for activity...${Colors.reset}`);
+		} else {
+			for (const event of events) {
+				lines.push(this.formatEvent(event));
+			}
+		}
+		
+		lines.push(`${Colors.dim}${'━'.repeat(width)}${Colors.reset}`);
+		
+		return lines.join('\n');
+	}
+
+	/**
+	 * Format a single event for display
+	 */
+	private formatEvent(event: ISimulationEvent): string {
+		
+		switch (event.type) {
+			case 'TRANSACTION':
+				if (event.data.from && event.data.to) {
+					const hashPreview = event.data.hash || '????????';
+					return `${Colors.green}💸 TX:${Colors.reset} ${Colors.cyan}${event.data.from}${Colors.reset} ${Colors.dim}→${Colors.reset} ${Colors.cyan}${event.data.to.padEnd(12)}${Colors.reset} ${Colors.yellow}[${event.data.amount} coins]${Colors.reset} ${Colors.dim}fee:${event.data.fee}${Colors.reset} ${Colors.dim}{${hashPreview}...}${Colors.reset}`;
+				} else {
+					return `${Colors.blue}ℹ  ${event.data.message}${Colors.reset}`;
+				}
+				
+			case 'MINING_START':
+				return `${Colors.yellow}⛏️  MINING:${Colors.reset} ${Colors.bright}Block with ${event.data.transactions} txs${Colors.reset} ${Colors.dim}by ${event.data.miner}${Colors.reset} ${Colors.yellow}🔍 searching...${Colors.reset}`;
+				
+			case 'MINING_COMPLETE':
+				const hashDisplay = `0000${event.data.hash.substring(4)}`;
+				return `${Colors.bright}${Colors.green}✓  MINED:${Colors.reset} ${Colors.green}Block #${event.data.blockHeight}${Colors.reset} ${Colors.dim}│${Colors.reset} Hash: ${Colors.cyan}${hashDisplay}...${Colors.reset} ${Colors.dim}│${Colors.reset} ${Colors.yellow}Reward: ${event.data.reward}${Colors.reset} ${Colors.dim}│ ${event.data.miningTime}ms${Colors.reset}`;
+				
+			case 'ERROR':
+				return `${Colors.red}✗  ERROR: ${event.data.message}${Colors.reset}`;
+				
+			default:
+				return `${Colors.dim}${JSON.stringify(event.data)}${Colors.reset}`;
+		}
+	}
+
+	/**
+	 * Render simulation statistics
+	 */
+	private renderSimulationStats(width: number): string {
+		const stats = this.simulationService.getStats();
+		const lines: string[] = [];
+		
+		lines.push(`${Colors.cyan}╔═══ ⚡ SIMULATION STATS ════════════════════════════════════════════════════╗${Colors.reset}`);
+		lines.push(`${Colors.cyan}║${Colors.reset}  ${Colors.bright}Auto-Transactions:${Colors.reset} ${Colors.green}${String(stats.autoTransactions).padEnd(12)}${Colors.reset}${Colors.cyan}│${Colors.reset}  ${Colors.bright}Auto-Mined Blocks:${Colors.reset} ${Colors.yellow}${String(stats.autoMinedBlocks).padEnd(12)}${Colors.reset}${''.padEnd(width - 68)}${Colors.cyan}║${Colors.reset}`);
+		
+		const avgBlockTime = stats.averageBlockTime > 0 ? `${(stats.averageBlockTime / 1000).toFixed(1)}s` : 'N/A';
+		const botCount = this.simulationService.getBotCount();
+		
+		lines.push(`${Colors.cyan}║${Colors.reset}  ${Colors.bright}Avg Block Time:${Colors.reset} ${Colors.magenta}${avgBlockTime.padEnd(12)}${Colors.reset}${Colors.cyan}│${Colors.reset}  ${Colors.bright}Bot Wallets:${Colors.reset} ${Colors.blue}${String(botCount).padEnd(12)}${Colors.reset}${''.padEnd(width - 64)}${Colors.cyan}║${Colors.reset}`);
+		lines.push(`${Colors.cyan}╚${'═'.repeat(width - 2)}╝${Colors.reset}`);
+		
+		return lines.join('\n');
+	}
+
+	/**
+	 * Render footer with ASCII art
+	 */
+	private renderFooter(): string {
+		const lines: string[] = [];
+		
+		// ASCII blockchain visualization
+		lines.push(`${Colors.dim}`);
+		lines.push('  ┌─────┐    ┌─────┐    ┌─────┐    ┌─────┐');
+		lines.push('  │█████│ ─→ │█████│ ─→ │█████│ ─→ │█████│ ─→ ...');
+		lines.push('  └─────┘    └─────┘    └─────┘    └─────┘');
+		lines.push(`${Colors.reset}`);
+		lines.push('');
+		lines.push(`${Colors.bright}${Colors.yellow}[Press Ctrl+C to stop simulation and return to menu]${Colors.reset}`);
+		
+		return lines.join('\n');
+	}
+
+	/**
+	 * Check if display is active
+	 */
+	public isActive(): boolean {
+		return this.isDisplaying;
+	}
+}
